@@ -190,16 +190,17 @@ export default function App() {
 
   useEffect(() => {
     const onPointerMove = (event) => {
-      if (!dragState.current || !canvasRef.current) {
+      const currentDrag = dragState.current;
+      if (!currentDrag || !canvasRef.current) {
         return;
       }
       const rect = canvasRef.current.getBoundingClientRect();
-      const rawX = event.clientX - rect.left - dragState.current.offsetX;
-      const rawY = event.clientY - rect.top - dragState.current.offsetY;
+      const rawX = event.clientX - rect.left - currentDrag.offsetX;
+      const rawY = event.clientY - rect.top - currentDrag.offsetY;
       const nextPosition = clampNodePosition(rawX, rawY);
       setNodes((prev) =>
         prev.map((node) =>
-          node.id === dragState.current.id ? { ...node, x: nextPosition.x, y: nextPosition.y } : node
+          node.id === currentDrag.id ? { ...node, x: nextPosition.x, y: nextPosition.y } : node
         )
       );
     };
