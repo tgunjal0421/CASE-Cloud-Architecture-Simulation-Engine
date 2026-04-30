@@ -7,46 +7,61 @@
 
 ## Install Dependencies
 
+### Frontend
 From project root:
 
-```powershell
+```bash
 cd frontend
 npm install
 ```
 
-## Start Development Server
+### Backend
+```bash
+cd backend
+npm install
+```
 
-Use this command on local machine (works even if `npm run dev` has path issues):
+## Start Development Servers
 
-```powershell
+### Frontend
+Use this command on local machine:
+
+```bash
 cd frontend
 node .\node_modules\vite\bin\vite.js --host 0.0.0.0 --port 5173
 ```
 
 Use this command on the GitHub codespace:
-```powershell
+```bash
 cd frontend
 npx vite --host 0.0.0.0 --port 5173
 ```
 
 If the port is in use, Vite automatically picks another port (`5174`, `5175`, etc.).
 
-Use this command for Github codespace
-```powershell
-cd frontend
-npx vite --host 0.0.0.0 --port 5173
+### Backend
+```bash
+cd backend
+npm start
 ```
+
+For development with auto-restart:
+```bash
+cd backend
+npm run dev
+```
+
+The backend runs on `http://localhost:3000` by default.
 
 ## Build for Production
 
-```powershell
+### Frontend
+```bash
 cd frontend
 node .\node_modules\vite\bin\vite.js build
 ```
 
-## Preview Production Build
-
-```powershell
-cd frontend
+### Backend
+The backend is ready for production as-is, or can be containerized with Docker.
 node .\node_modules\vite\bin\vite.js preview
 ```
