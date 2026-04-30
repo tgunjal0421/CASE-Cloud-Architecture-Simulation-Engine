@@ -1,74 +1,128 @@
 "use client";
-// components/builder/CustomNode.tsx
-// Renders a node on the React Flow canvas.
-// Looks up icon/color from COMPONENT_PALETTE flat list (derived from all categories).
-// Falls back to node's own data.color if type not found (future-proof for new types).
+// components/builder/CustomNode.tsx — Extended with live metrics + failure states
 
 import React, { memo } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
 import { COMPONENT_PALETTE } from "@/lib/mockData";
+import { NodeMetrics } from "@/lib/simulationEngine";
 
 const PALETTE_MAP = Object.fromEntries(COMPONENT_PALETTE.map((c) => [c.type, c]));
 
 export interface CaseNodeData {
-  label: string;
-  type: string;
-  color?: string;
-  icon?: string;
-  hasError?: boolean;
+  label:         string;
+  type:          string;
+  color?:        string;
+  icon?:         string;
+  hasError?:     boolean;
+  metrics?:      NodeMetrics;
+  isSimulating?: boolean;
 }
 
 function CustomNode({ data, selected }: NodeProps<CaseNodeData>) {
-  // Prefer palette lookup, fall back to node's own data (set at drag time)
-  const palette = PALETTE_MAP[data.type];
-  const color  = palette?.color  ?? data.color  ?? "#8a9ab5";
-  const icon   = palette?.icon   ?? data.icon   ?? "◇";
+  const palette    = PALETTE_MAP[data.type];
+  const color      = data.color ?? palette?.color ?? "#8a9ab5";
+  const icon       = data.icon  ?? palette?.icon  ?? "◇";
+  const metrics    = data.metrics;
+  const isFailed   = metrics?.isFailed ?? data.hasError ?? false;
+  const isOverloaded = metrics?.isOverloaded ?? false;
+  const isSimulating = data.isSimulating ?? false;
 
-  const borderColor = data.hasError ? "#f87171" : selected ? color : "var(--bg-border)";
-  const glowColor   = data.hasError ? "rgba(248,113,113,0.25)" : selected ? `${color}30` : "transparent";
+  const borderColor = isFailed ? "#f87171" : isOverloaded ? "#fbbf24" : selected ? color : "var(--bg-border)";
+  const glowColor   = isFailed ? "rgba(248,113,113,0.3)" : isOverloaded ? "rgba(251,191,36,0.25)" : selected ? `${color}30` : "transparent";
+  const bgColor     = isFailed ? "rgba(248,113,113,0.08)" : isOverloaded ? "rgba(251,191,36,0.06)" : "var(--bg-elevated)";
+  const latencyColor = !metrics ? "var(--text-muted)" : metrics.latency > 200 ? "#f87171" : metrics.latency > 100 ? "#fbbf24" : "#00c896";
 
   return (
     <div style={{
       position: "relative", display: "flex", flexDirection: "column", alignItems: "center",
-      gap: 6, padding: "10px 14px", borderRadius: 12, minWidth: 100, cursor: "default",
-      background: "var(--bg-elevated)",
-      border: `1.5px solid ${borderColor}`,
-      boxShadow: selected || data.hasError ? `0 0 16px ${glowColor}` : "0 2px 8px rgba(0,0,0,0.3)",
-      transition: "all 0.2s",
+      gap: 5, padding: "10px 12px 8px", borderRadius: 14, minWidth: 115, maxWidth: 145,
+      background: bgColor, border: `1.5px solid ${borderColor}`,
+      boxShadow: isSimulating && !isFailed ? `0 0 0 3px ${color}20, 0 0 18px ${glowColor}` : `0 0 16px ${glowColor}`,
+      cursor: "grab", transition: "all 0.3s",
     }}>
-      {/* Error badge */}
-      {data.hasError && (
-        <div style={{
-          position: "absolute", top: -7, right: -7, width: 16, height: 16,
-          borderRadius: "50%", background: "#f87171", color: "#0a0e1a",
-          fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center",
-        }}>!</div>
+
+      {isFailed && (
+        <div style={{ position: "absolute", top: -8, right: -8, padding: "2px 6px", borderRadius: 20,
+          background: "#f87171", color: "#080c18", fontSize: 8, fontWeight: 700,
+          fontFamily: "'Syne',sans-serif", letterSpacing: "0.05em", zIndex: 10 }}>FAILED</div>
+      )}
+      {isOverloaded && !isFailed && (
+        <div style={{ position: "absolute", top: -8, right: -8, padding: "2px 6px", borderRadius: 20,
+          background: "#fbbf24", color: "#080c18", fontSize: 8, fontWeight: 700,
+          fontFamily: "'Syne',sans-serif", letterSpacing: "0.05em", zIndex: 10 }}>OVERLOAD</div>
       )}
 
-      {/* Icon */}
+      {isSimulating && !isFailed && (
+        <div style={{ position: "absolute", inset: -4, borderRadius: 18,
+          border: `1px solid ${color}40`, animation: "nodeRing 2s ease-out infinite", pointerEvents: "none" }} />
+      )}
+
       <div style={{
         width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center",
-        justifyContent: "center", fontSize: 18,
-        background: `${color}18`, border: `1px solid ${color}35`, color,
+        justifyContent: "center", fontSize: 18, flexShrink: 0,
+        background: isFailed ? "rgba(248,113,113,0.15)" : `${color}18`,
+        border: `1px solid ${isFailed ? "#f87171" : color}35`,
+        color: isFailed ? "#f87171" : color, opacity: isFailed ? 0.7 : 1,
+        filter: isFailed ? "grayscale(0.5)" : "none", transition: "all 0.3s",
       }}>
-        {icon}
+        {isFailed ? "✕" : icon}
       </div>
 
-      {/* Label */}
-      <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 11, fontWeight: 500, color: "var(--text-primary)", maxWidth: 90, lineHeight: 1.3 }}>
-          {data.label}
-        </p>
-        <p style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>
+      <p style={{ fontSize: 11, fontWeight: 600, textAlign: "center",
+        color: isFailed ? "#f87171" : "var(--text-primary)", fontFamily: "'Syne',sans-serif",
+        lineHeight: 1.3, maxWidth: 110, wordBreak: "break-word", marginTop: 2,
+        opacity: isFailed ? 0.7 : 1 }}>
+        {data.label}
+      </p>
+
+      <div style={{ padding: "1px 6px", borderRadius: 20, background: `${color}12`, border: `1px solid ${color}22` }}>
+        <p style={{ fontSize: 9, color, fontFamily: "'JetBrains Mono',monospace", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
           {data.type}
         </p>
       </div>
 
-      {/* Handles */}
-      <Handle type="target" position={Position.Top} />
-      <Handle type="source" position={Position.Bottom} />
-      <Handle type="target" position={Position.Left} style={{ top: "50%" }} />
-      <Handle type="source" position={Position.Right} style={{ top: "50%" }} />
+      {metrics && isSimulating && !isFailed && (
+        <div style={{ width: "100%", marginTop: 4, padding: "5px 6px", borderRadius: 7,
+          background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.06)",
+          display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 8, color: "var(--text-muted)", fontFamily: "'JetBrains Mono',monospace" }}>TPUT</span>
+            <span style={{ fontSize: 9, color: "#00e5ff", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>
+              {metrics.throughput} r/s
+            </span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 8, color: "var(--text-muted)", fontFamily: "'JetBrains Mono',monospace" }}>LAT</span>
+            <span style={{ fontSize: 9, color: latencyColor, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>
+              {metrics.latency}ms
+            </span>
+          </div>
+          <div style={{ height: 2, borderRadius: 1, background: "var(--bg-border)", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 1,
+              width: `${Math.min(100, (metrics.latency / 300) * 100)}%`,
+              background: latencyColor, transition: "width 0.5s ease, background 0.3s" }} />
+          </div>
+        </div>
+      )}
+
+      {isFailed && (
+        <p style={{ fontSize: 8, color: "#f87171", fontFamily: "'JetBrains Mono',monospace", opacity: 0.8 }}>
+          traffic stopped
+        </p>
+      )}
+
+      {selected && !isFailed && !isSimulating && (
+        <p style={{ fontSize: 8, color: "var(--text-muted)", fontFamily: "'JetBrains Mono',monospace" }}>
+          dbl-click to rename
+        </p>
+      )}
+
+      <Handle type="target" position={Position.Top}    style={{ top: -5 }} />
+      <Handle type="source" position={Position.Bottom} style={{ bottom: -5 }} />
+      <Handle type="target" position={Position.Left}   style={{ left: -5, top: "50%" }} />
+      <Handle type="source" position={Position.Right}  style={{ right: -5, top: "50%" }} />
+
+      <style>{`@keyframes nodeRing { 0%{opacity:0.8;transform:scale(1)} 100%{opacity:0;transform:scale(1.15)} }`}</style>
     </div>
   );
 }
