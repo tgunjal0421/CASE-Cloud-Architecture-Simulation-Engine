@@ -23,6 +23,12 @@ cd frontend
 node .\node_modules\vite\bin\vite.js --host 0.0.0.0 --port 5173
 ```
 
+Use this command on the GitHub codespace:
+```powershell
+cd frontend
+npx vite --host 0.0.0.0 --port 5173
+```
+
 If the port is in use, Vite automatically picks another port (`5174`, `5175`, etc.).
 
 Use this command for Github codespace
