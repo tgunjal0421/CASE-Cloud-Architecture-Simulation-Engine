@@ -73,40 +73,6 @@ export const COMPONENT_CATEGORIES: PaletteCategory[] = [
       { type: "backup",        label: "Backup",         icon: "↻", color: "#818cf8", description: "Scheduled data backup service",  badge: "DR" },
     ],
   },
-  {
-    id: "messaging",
-    label: "Messaging & Events",
-    icon: "⇶",
-    color: "#fbbf24",
-    items: [
-      { type: "queue",   label: "Message Queue",  icon: "⇶", color: "#fbbf24", description: "Async task queue / broker",      badge: "MQ" },
-      { type: "kafka",   label: "Kafka",          icon: "⟫", color: "#f59e0b", description: "Distributed event streaming",    badge: "Stream" },
-      { type: "pubsub",  label: "Pub / Sub",      icon: "⊕", color: "#fcd34d", description: "Topic-based message fanout" },
-      { type: "webhook", label: "Webhook",        icon: "↗", color: "#fde68a", description: "HTTP event push endpoint" },
-    ],
-  },
-  {
-    id: "security",
-    label: "Security & IAM",
-    icon: "⛨",
-    color: "#f472b6",
-    items: [
-      { type: "iam",     label: "IAM",            icon: "⛨", color: "#f472b6", description: "Identity & access management" },
-      { type: "vault",   label: "Secret Manager", icon: "◆", color: "#fb7185", description: "Secure secrets & key storage",  badge: "Vault" },
-      { type: "sso",     label: "SSO",            icon: "◈", color: "#fda4af", description: "Single sign-on provider" },
-    ],
-  },
-  {
-    id: "monitoring",
-    label: "Monitoring & Logging",
-    icon: "◎",
-    color: "#34d399",
-    items: [
-      { type: "monitor",   label: "Monitoring",     icon: "◎", color: "#34d399", description: "Metrics, alerts & dashboards" },
-      { type: "logging",   label: "Log Aggregator", icon: "≡", color: "#6ee7b7", description: "Centralized log collection" },
-      { type: "tracing",   label: "Distributed Trace", icon: "⇢", color: "#a7f3d0", description: "Request tracing across services", badge: "APM" },
-    ],
-  },
 ];
 
 // Flat list derived from categories — used for search and canvas node lookup

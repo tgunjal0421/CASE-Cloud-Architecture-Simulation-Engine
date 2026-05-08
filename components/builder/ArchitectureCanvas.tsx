@@ -20,7 +20,7 @@ function TrafficEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
   const [edgePath] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
   const speed   = data?.trafficSpeed ?? 1.5;
   const active  = data?.active ?? false;
-  const color   = active ? "#00e5ff" : "#1e2a45";
+  const color   = active ? "var(--brand-cyan)" : "#1e2a45";
   const animId  = `te-${id}`;
 
   return (
@@ -112,7 +112,7 @@ export default function ArchitectureCanvas({
     edges.map((e) => ({
       ...e,
       type: "trafficEdge",
-      data: { active: isSimulating && activeEdges.has(e.id), trafficSpeed, color: "#00e5ff" },
+      data: { active: isSimulating && activeEdges.has(e.id), trafficSpeed, color: "var(--brand-cyan)" },
       style: { stroke: "transparent" },
     })),
     [edges, isSimulating, activeEdges, trafficSpeed]
@@ -122,7 +122,7 @@ export default function ArchitectureCanvas({
     const newEdge: Edge = {
       ...connection, id: `edge-${Date.now()}`,
       type: "trafficEdge", animated: false,
-      data: { active: false, trafficSpeed, color: "#00e5ff" },
+      data: { active: false, trafficSpeed, color: "var(--brand-cyan)" },
       style: { stroke: "transparent" },
     } as Edge;
     onEdgesAdd(addEdge(newEdge, edges));
@@ -159,7 +159,7 @@ export default function ArchitectureCanvas({
   };
 
   const isEmpty = nodes.length === 0;
-  const intensityColor = trafficMultiplier <= 2 ? "#00c896" : trafficMultiplier <= 5 ? "#4f8ef7" : trafficMultiplier <= 8 ? "#f7a44f" : "#f87171";
+  const intensityColor = trafficMultiplier <= 2 ? "var(--brand-green)" : trafficMultiplier <= 5 ? "#4f8ef7" : trafficMultiplier <= 8 ? "#f7a44f" : "#f87171";
   const intensity = trafficMultiplier <= 2 ? "Low" : trafficMultiplier <= 5 ? "Moderate" : trafficMultiplier <= 8 ? "High" : "Extreme";
 
   return (
@@ -181,20 +181,20 @@ export default function ArchitectureCanvas({
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(30,42,69,0.8)" />
         <Controls position="bottom-right" />
         <MiniMap position="bottom-left"
-          nodeColor={(n) => (n.data as CaseNodeData)?.color ?? PALETTE_MAP[(n.data as CaseNodeData)?.type]?.color ?? "#4a5568"}
-          maskColor="rgba(10,14,26,0.7)" style={{ width: 130, height: 80 }} />
+          nodeColor={(n) => (n.data as CaseNodeData)?.color ?? PALETTE_MAP[(n.data as CaseNodeData)?.type]?.color ?? "var(--text-muted)"}
+          maskColor="rgba(240,244,248,0.75)" style={{ width: 130, height: 80 }} />
       </ReactFlow>
 
       {/* ── Empty state ── *//* ── Empty state ── */}
       {isEmpty && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 5 }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 32, borderRadius: 20, background: "rgba(15,21,37,0.6)", border: "1px dashed var(--bg-border)", backdropFilter: "blur(4px)" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 32, borderRadius: 3, background: "rgba(255,255,255,0.9)", border: "1px dashed var(--bg-border)", backdropFilter: "blur(4px)" }}>
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity={0.3}>
-              <polygon points="24,4 44,16 44,32 24,44 4,32 4,16" stroke="#00e5ff" strokeWidth="1.5" fill="none" />
-              <circle cx="24" cy="24" r="4" fill="#00e5ff" />
+              <polygon points="24,4 44,16 44,32 24,44 4,32 4,16" stroke="var(--brand-cyan)" strokeWidth="1.5" fill="none" />
+              <circle cx="24" cy="24" r="4" fill="var(--brand-cyan)" />
             </svg>
             <div style={{ textAlign: "center" }}>
-              <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 600, fontFamily: "'Syne',sans-serif", marginBottom: 4 }}>Canvas is empty</p>
+              <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 600, fontFamily: "var(--font-head)", marginBottom: 4 }}>Canvas is empty</p>
               <p style={{ color: "var(--text-muted)", fontSize: 11 }}>Drag components from the left panel<br />or load a template to get started</p>
             </div>
           </div>
@@ -203,8 +203,8 @@ export default function ArchitectureCanvas({
 
       {/* ── Context menu ── */}
       {contextMenu && (
-        <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: contextMenu.y, left: contextMenu.x, zIndex: 1000, background: "var(--bg-elevated)", border: "1px solid var(--bg-border)", borderRadius: 10, padding: 4, minWidth: 170, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}>
-          <CMenuItem icon="✎" label="Rename" color="#00e5ff" onClick={() => {
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: contextMenu.y, left: contextMenu.x, zIndex: 1000, background: "var(--bg-elevated)", border: "1px solid var(--bg-border)", borderRadius: 4, padding: 4, minWidth: 170, boxShadow: "0 4px 24px rgba(0,0,0,0.1), 0 0 0 1px var(--bg-border)" }}>
+          <CMenuItem icon="✎" label="Rename" color="var(--brand-cyan)" onClick={() => {
             const node = nodes.find((n) => n.id === contextMenu.nodeId);
             if (node) { setRenameValue(node.data.label); setRenameState({ nodeId: node.id, x: contextMenu.x, y: contextMenu.y }); }
             setContextMenu(null);
@@ -212,7 +212,7 @@ export default function ArchitectureCanvas({
           <CMenuItem
             icon={contextMenu.isFailed ? "↺" : "⚠"}
             label={contextMenu.isFailed ? "Restore node" : "Simulate failure"}
-            color={contextMenu.isFailed ? "#00c896" : "#f7a44f"}
+            color={contextMenu.isFailed ? "var(--brand-green)" : "#f7a44f"}
             onClick={() => { onNodeFailToggle(contextMenu.nodeId, contextMenu.nodeLabel); setContextMenu(null); }}
           />
           <div style={{ height: 1, background: "var(--bg-border)", margin: "3px 6px" }} />
@@ -224,18 +224,18 @@ export default function ArchitectureCanvas({
       {renameState && (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 999 }} onClick={commitRename} />
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: Math.min(renameState.y - 10, window.innerHeight - 150), left: Math.min(renameState.x - 10, window.innerWidth - 260), zIndex: 1000, background: "var(--bg-elevated)", border: "1px solid #00e5ff", borderRadius: 12, padding: 16, width: 240, boxShadow: "0 8px 32px rgba(0,229,255,0.15)" }}>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8, fontFamily: "'JetBrains Mono',monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Rename node</p>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: Math.min(renameState.y - 10, window.innerHeight - 150), left: Math.min(renameState.x - 10, window.innerWidth - 260), zIndex: 1000, background: "var(--bg-elevated)", border: "1px solid var(--brand-cyan)", borderRadius: 5, padding: 16, width: 240, boxShadow: "0 8px 32px rgba(0,229,255,0.15)" }}>
+            <p style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Rename node</p>
             <input ref={renameInputRef} type="text" value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenameState(null); }}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, fontSize: 12, background: "var(--bg-surface)", border: "1px solid var(--bg-border)", color: "var(--text-primary)", outline: "none", fontFamily: "'DM Sans',sans-serif", marginBottom: 10 }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "#00e5ff"; }}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg-surface)", border: "1px solid var(--bg-border)", color: "var(--text-primary)", outline: "none", fontFamily: "var(--font-ui)", marginBottom: 10 }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--brand-cyan)"; }}
               onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--bg-border)"; }}
             />
             <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={commitRename} style={{ flex: 1, padding: "6px 0", borderRadius: 7, fontSize: 11, fontWeight: 600, background: "linear-gradient(135deg,#00e5ff,#4f8ef7)", border: "none", color: "#080c18", cursor: "pointer", fontFamily: "'Syne',sans-serif" }}>Rename</button>
-              <button onClick={() => setRenameState(null)} style={{ padding: "6px 12px", borderRadius: 7, fontSize: 11, background: "var(--bg-border)", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}>Cancel</button>
+              <button onClick={commitRename} style={{ flex: 1, padding: "6px 0", borderRadius: 4, fontSize: 11, fontWeight: 600, background: "linear-gradient(135deg,#00e5ff,#4f8ef7)", border: "none", color: "#ffffff", cursor: "pointer", fontFamily: "var(--font-head)" }}>Rename</button>
+              <button onClick={() => setRenameState(null)} style={{ padding: "6px 12px", borderRadius: 4, fontSize: 11, background: "var(--bg-border)", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         </>
@@ -250,7 +250,7 @@ function CMenuItem({ icon, label, color, onClick }: { icon: string; label: strin
   const [h, setH] = useState(false);
   return (
     <button onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 10px", borderRadius: 7, border: "none", cursor: "pointer", background: h ? color + "18" : "transparent", color: h ? color : "var(--text-secondary)", fontSize: 12, fontFamily: "'DM Sans',sans-serif", textAlign: "left", transition: "all 0.15s" }}>
+      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 10px", borderRadius: 4, border: "none", cursor: "pointer", background: h ? color + "18" : "transparent", color: h ? color : "var(--text-secondary)", fontSize: 12, fontFamily: "var(--font-ui)", textAlign: "left", transition: "all 0.15s" }}>
       <span style={{ color, fontSize: 11, width: 14 }}>{icon}</span>{label}
     </button>
   );

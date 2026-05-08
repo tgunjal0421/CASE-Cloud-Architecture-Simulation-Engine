@@ -1,6 +1,5 @@
 "use client";
-// app/page.tsx — Wires SimStatus from useSimulation to all components.
-// Single source of truth: simStatus drives all behaviors.
+// app/page.tsx — Orchestrates all state. resultsOpen controls collapsible right panel.
 
 import React, { useState, useCallback } from "react";
 import { useNodesState, useEdgesState, Node, Edge, ReactFlowProvider } from "reactflow";
@@ -17,7 +16,6 @@ import { SCENARIO_PRESETS, ARCHITECTURE_TEMPLATES } from "@/lib/mockData";
 import { CaseNodeData } from "@/components/builder/CustomNode";
 import { useSimulation } from "@/lib/useSimulation";
 
-// ── Templates ─────────────────────────────────────────────────────────────
 function buildTemplateNodes(id: string): { nodes: Node<CaseNodeData>[]; edges: Edge[] } {
   if (id === "three-tier") return {
     nodes: [
@@ -68,7 +66,6 @@ function buildTemplateNodes(id: string): { nodes: Node<CaseNodeData>[]; edges: E
   return { nodes: [], edges: [] };
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────
 export default function CasePage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<CaseNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -80,14 +77,13 @@ export default function CasePage() {
   const [isSaving,          setIsSaving]          = useState(false);
   const [isCostLoading,     setIsCostLoading]     = useState(false);
   const [lastRunId,         setLastRunId]         = useState<string | null>(null);
+  const [resultsOpen,       setResultsOpen]       = useState(false); // collapsed by default
 
   const { toasts, addToast, dismissToast } = useToast();
 
-  // ── Simulation engine — single source of truth ──
   const { simStatus, simState, failedNodes, startSim, stopSim, toggleFail, resetSim, clearLogs } =
     useSimulation(nodes, edges, trafficMultiplier, failureMode);
 
-  // ── Node operations ──
   const handleNodeAdd = useCallback((newNode: Node<CaseNodeData>) => {
     setNodes((prev) => {
       const updated = [...prev, newNode];
@@ -111,22 +107,20 @@ export default function CasePage() {
     setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
   }, [setNodes, setEdges]);
 
-  // ── Start — guards empty canvas ──
   const handleStart = useCallback(() => {
     if (nodes.length === 0) { addToast("info", "Add nodes first"); return; }
     const runId = `run_${Date.now()}`;
     setLastRunId(runId);
     startSim();
+    setResultsOpen(true); // auto-open results panel on simulation start
     addToast("success", "Simulation started", `${nodes.length} nodes · ×${trafficMultiplier}`);
   }, [nodes, trafficMultiplier, startSim, addToast]);
 
-  // ── Stop — immediate, no confirmation needed ──
   const handleStop = useCallback(() => {
     stopSim();
     addToast("info", "Simulation stopped", "Metrics frozen · logs preserved");
   }, [stopSim, addToast]);
 
-  // ── Save ──
   const handleSave = useCallback(async () => {
     if (isSaving) return;
     setIsSaving(true);
@@ -137,7 +131,6 @@ export default function CasePage() {
     finally   { setIsSaving(false); }
   }, [isSaving, nodes, edges, addToast]);
 
-  // ── Full reset — clears canvas + simulation ──
   const handleReset = useCallback(() => {
     resetSim();
     setNodes([]); setEdges([]);
@@ -146,7 +139,6 @@ export default function CasePage() {
     addToast("info", "Canvas cleared");
   }, [resetSim, setNodes, setEdges, addToast]);
 
-  // ── Template load ──
   const handleLoadTemplate = useCallback((templateId: string) => {
     const { nodes: n, edges: e } = buildTemplateNodes(templateId);
     setNodes(n); setEdges(e);
@@ -156,7 +148,6 @@ export default function CasePage() {
     fetchCostEstimate(n.length).then(setCostData).catch(console.error).finally(() => setIsCostLoading(false));
   }, [setNodes, setEdges, addToast]);
 
-  // ── Presets — only apply when not running ──
   const handlePresetSelect = useCallback((presetId: string) => {
     const p = SCENARIO_PRESETS.find((x) => x.id === presetId);
     if (!p) return;
@@ -165,7 +156,6 @@ export default function CasePage() {
     setActivePresetId(presetId);
   }, []);
 
-  // ── Traffic change — ALWAYS live, even during simulation ──
   const handleTrafficChange = useCallback((v: number) => {
     setTrafficMultiplier(v);
     setActivePresetId(null);
@@ -176,38 +166,46 @@ export default function CasePage() {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "var(--bg-base)", overflow: "hidden" }}>
 
         <Navbar
-          simStatus={simStatus}
           isSaving={isSaving}
           nodeCount={nodes.length}
+          resultsOpen={resultsOpen}
+          isRunning={simStatus === "running"}
+          isStopped={simStatus === "stopped"}
           onStart={handleStart}
           onStop={handleStop}
           onSave={handleSave}
           onReset={handleReset}
+          onToggleResults={() => setResultsOpen((v) => !v)}
         />
 
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-          <Sidebar onLoadTemplate={handleLoadTemplate} />
-
-          <main style={{ flex: 1, overflow: "hidden" }}>
-            <ArchitectureCanvas
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onEdgesAdd={handleEdgesAdd}
-              onNodeAdd={handleNodeAdd}
-              onNodeRename={handleNodeRename}
-              onNodeDelete={handleNodeDelete}
-              onNodeFailToggle={toggleFail}
-              trafficMultiplier={trafficMultiplier}
-              isSimulating={simStatus === "running"}
-              nodeMetrics={simState.nodeMetrics}
-              activeEdges={simState.activeEdges}
-              failedNodes={failedNodes}
-            />
+        {/* Canvas takes full width — Results panel overlays from the right */}
+        <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+          <Sidebar onLoadTemplate={handleLoadTemplate} onNodeAdd={handleNodeAdd} />
+          <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <ArchitectureCanvas
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onEdgesAdd={handleEdgesAdd}
+                onNodeAdd={handleNodeAdd}
+                onNodeRename={handleNodeRename}
+                onNodeDelete={handleNodeDelete}
+                onNodeFailToggle={toggleFail}
+                trafficMultiplier={trafficMultiplier}
+                isSimulating={simStatus === "running"}
+                nodeMetrics={simState.nodeMetrics}
+                activeEdges={simState.activeEdges}
+                failedNodes={failedNodes}
+              />
+            </div>
           </main>
 
+          {/* Results panel — flex sibling, pushes canvas naturally */}
           <RightPanel
+            isOpen={resultsOpen}
+            onClose={() => setResultsOpen(false)}
             simStatus={simStatus}
             costData={costData}
             isCostLoading={isCostLoading}
@@ -216,6 +214,12 @@ export default function CasePage() {
             systemMetrics={simState.systemMetrics}
             logs={simState.logs}
             onClearLogs={clearLogs}
+            trafficMultiplier={trafficMultiplier}
+            failureMode={failureMode}
+            activePresetId={activePresetId}
+            onPresetSelect={handlePresetSelect}
+            onTrafficChange={handleTrafficChange}
+            onFailureToggle={setFailureMode}
           />
         </div>
 
@@ -223,10 +227,8 @@ export default function CasePage() {
           simStatus={simStatus}
           trafficMultiplier={trafficMultiplier}
           failureMode={failureMode}
-          activePresetId={activePresetId}
-          onTrafficChange={handleTrafficChange}
-          onFailureToggle={setFailureMode}
-          onPresetSelect={handlePresetSelect}
+          nodeCount={nodes.length}
+          lastRunId={lastRunId}
         />
 
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />

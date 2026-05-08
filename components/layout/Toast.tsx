@@ -38,7 +38,7 @@ function ToastItem({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (id: 
   const colors: Record<ToastType, { border: string; icon: string; bg: string }> = {
     success: { border: "var(--brand-green)", icon: "✓", bg: "rgba(0,200,150,0.12)" },
     error: { border: "#f87171", icon: "✕", bg: "rgba(248,113,113,0.12)" },
-    info: { border: "var(--brand-cyan)", icon: "ℹ", bg: "rgba(0,229,255,0.08)" },
+    info: { border: "var(--brand-cyan)", icon: "ℹ", bg: "rgba(2,132,199,0.07)" },
   };
   const style = colors[toast.type];
 
