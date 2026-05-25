@@ -1,7 +1,7 @@
 "use client";
 // components/builder/ArchitectureCanvas.tsx
-// Extended with: per-node metric injection, failure toggle via context menu,
-// active-edge highlighting from simulation state, traffic flow animation.
+// Key fix: handleConfigSave now calls getNodeSummary() and stores summaryLines
+// in the node data so CustomNode can render them on the card immediately.
 
 import React, { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import ReactFlow, {
@@ -11,39 +11,45 @@ import ReactFlow, {
   NodeMouseHandler, EdgeProps, getBezierPath, BaseEdge,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import CustomNode, { CaseNodeData } from "./CustomNode";
-import { COMPONENT_PALETTE } from "@/lib/mockData";
+import CustomNode, { CaseNodeData, NodeCallbacks, NODE_WIDTH } from "./CustomNode";
+import ComponentConfigModal from "./ComponentConfigModal";
+import { COMPONENT_PALETTE, PaletteItem } from "@/lib/mockData";
 import { NodeMetrics } from "@/lib/simulationEngine";
+import { getNodeSummary } from "@/lib/componentConfigs";  // ← critical import
 
-// ── Animated traffic edge ──────────────────────────────────────────────────
-function TrafficEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps) {
-  const [edgePath] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
-  const speed   = data?.trafficSpeed ?? 1.5;
-  const active  = data?.active ?? false;
-  const color   = active ? "var(--brand-cyan)" : "#1e2a45";
-  const animId  = `te-${id}`;
+// ── Traffic edge ───────────────────────────────────────────────────────────
+function TrafficEdge({
+  id, sourceX, sourceY, targetX, targetY,
+  sourcePosition, targetPosition, data,
+}: EdgeProps) {
+  const [edgePath] = getBezierPath({
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+  });
+  const speed  = data?.trafficSpeed ?? 1.5;
+  const active = data?.active ?? false;
+  const color  = active ? "var(--brand-cyan, #0369a1)" : "#cbd5e1";
+  const animId = `te-${id}`;
 
   return (
     <>
       <style>{`@keyframes ${animId}{from{stroke-dashoffset:30}to{stroke-dashoffset:0}}`}</style>
-      <BaseEdge path={edgePath} style={{ stroke: color, strokeWidth: active ? 2 : 1.5, opacity: active ? 0.4 : 0.25 }} />
+      <BaseEdge
+        path={edgePath}
+        style={{ stroke: color, strokeWidth: active ? 2 : 1.5, opacity: active ? 0.5 : 0.4 }}
+      />
       {active && (
         <>
-          <path d={edgePath} fill="none" stroke={color} strokeWidth={2.5}
+          <path
+            d={edgePath} fill="none" stroke={color} strokeWidth={2.5}
             strokeDasharray="10 8" strokeLinecap="round"
-            style={{ animation: `${animId} ${speed}s linear infinite` }} />
-          <circle r={3.5} fill={color} opacity={0.95} filter="url(#glow)">
+            style={{ animation: `${animId} ${speed}s linear infinite` }}
+          />
+          <circle r={3.5} fill={color} opacity={0.9}>
             <animateMotion dur={`${speed * 1.4}s`} repeatCount="indefinite">
               <mpath href={`#path-${id}`} />
             </animateMotion>
           </circle>
           <path id={`path-${id}`} d={edgePath} fill="none" stroke="none" />
-          <defs>
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="2" result="blur" />
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-          </defs>
         </>
       )}
     </>
@@ -52,103 +58,213 @@ function TrafficEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
 
 const NODE_TYPES = { caseNode: CustomNode };
 const EDGE_TYPES = { trafficEdge: TrafficEdge };
-const PALETTE_MAP = Object.fromEntries(COMPONENT_PALETTE.map((c) => [c.type, c]));
+const PALETTE_MAP = Object.fromEntries(COMPONENT_PALETTE.map(c => [c.type, c]));
 
-interface ContextMenu { nodeId: string; nodeLabel: string; x: number; y: number; isFailed: boolean; }
 interface RenameState { nodeId: string; x: number; y: number; }
 
 interface ArchitectureCanvasProps {
-  nodes:           Node<CaseNodeData>[];
-  edges:           Edge[];
-  onNodesChange:   OnNodesChange;
-  onEdgesChange:   OnEdgesChange;
-  onEdgesAdd:      (edges: Edge[]) => void;
-  onNodeAdd:       (node: Node<CaseNodeData>) => void;
-  onNodeRename:    (nodeId: string, newLabel: string) => void;
-  onNodeDelete:    (nodeId: string) => void;
-  onNodeFailToggle:(nodeId: string, label: string) => void;
+  nodes:             Node<CaseNodeData>[];
+  edges:             Edge[];
+  onNodesChange:     OnNodesChange;
+  onEdgesChange:     OnEdgesChange;
+  onEdgesAdd:        (edges: Edge[]) => void;
+  onNodeAdd:         (node: Node<CaseNodeData>) => void;
+  onNodeRename:      (nodeId: string, newLabel: string) => void;
+  onNodeDelete:      (nodeId: string) => void;
+  onNodeFailToggle:  (nodeId: string, label: string) => void;
+  onNodeUpdate:      (nodeId: string, data: Partial<CaseNodeData>) => void;
+  onViewMetrics?:    () => void;
   trafficMultiplier: number;
-  isSimulating:    boolean;
-  nodeMetrics:     Record<string, NodeMetrics>;
-  activeEdges:     Set<string>;
-  failedNodes:     Set<string>;
+  isSimulating:      boolean;
+  nodeMetrics:       Record<string, NodeMetrics>;
+  activeEdges:       Set<string>;
+  failedNodes:       Set<string>;
 }
+
+let _idC = 3000;
+const nextId = () => `node-${++_idC}`;
 
 export default function ArchitectureCanvas({
   nodes, edges, onNodesChange, onEdgesChange, onEdgesAdd,
   onNodeAdd, onNodeRename, onNodeDelete, onNodeFailToggle,
+  onNodeUpdate, onViewMetrics,
   trafficMultiplier, isSimulating, nodeMetrics, activeEdges, failedNodes,
 }: ArchitectureCanvasProps) {
   const reactFlowWrapper  = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
-  const nodeIdCounter     = useRef(nodes.length + 1);
+  const nodeIdC = useRef(nodes.length + 1);
 
-  const [contextMenu, setContextMenu]   = useState<ContextMenu | null>(null);
-  const [renameState, setRenameState]   = useState<RenameState | null>(null);
-  const [renameValue, setRenameValue]   = useState("");
-  // Traffic flow is derived from isSimulating — no separate toggle needed
+  const [renameState, setRenameState] = useState<RenameState | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (renameState) setTimeout(() => renameInputRef.current?.select(), 30); }, [renameState]);
-  useEffect(() => { const close = () => setContextMenu(null); window.addEventListener("click", close); return () => window.removeEventListener("click", close); }, []);
+  // ── Config modal state ──────────────────────────────────────────────────
+  // pendingDrop = node not yet on canvas (first-time configure after drag)
+  // configNodeId = editing an existing node via three-dot menu
+  interface PendingDrop {
+    id:       string;
+    position: { x: number; y: number };
+    item:     PaletteItem;
+  }
+  const [pendingDrop,   setPendingDrop]   = useState<PendingDrop | null>(null);
+  const [configNodeId,  setConfigNodeId]  = useState<string | null>(null);
+
+  const configNode    = configNodeId ? nodes.find(n => n.id === configNodeId) : null;
+  const configPalette: PaletteItem | null =
+    pendingDrop ? pendingDrop.item
+    : configNode
+      ? (PALETTE_MAP[configNode.data.type] ?? {
+          type:        configNode.data.type,
+          label:       configNode.data.label,
+          icon:        configNode.data.icon  ?? "◇",
+          color:       configNode.data.color ?? "#6366f1",
+          description: configNode.data.type,
+        })
+      : null;
+
+  const configInitialValues = configNode?.data.configValues ?? undefined;
+
+  useEffect(() => {
+    if (renameState) setTimeout(() => renameInputRef.current?.select(), 30);
+  }, [renameState]);
+
   const trafficSpeed = Math.max(0.3, 3 - (trafficMultiplier - 1) * 0.3);
 
-  // Inject metrics + simulation state into node data
+  // ── Enrich nodes with callbacks and simulation state ───────────────────
   const enrichedNodes = useMemo(() =>
-    nodes.map((n) => ({
+    nodes.map(n => ({
       ...n,
       data: {
         ...n.data,
-        metrics:      nodeMetrics[n.id],
-        isSimulating: isSimulating,
-        isFailed:     failedNodes.has(n.id),
+        metrics:           nodeMetrics[n.id],
+        isSimulating,
+        isFailed:          failedNodes.has(n.id),
+        onConfigClick:     (nodeId: string) => setConfigNodeId(nodeId),
+        onRenameClick:     (nodeId: string) => {
+          const node = nodes.find(x => x.id === nodeId);
+          if (node) {
+            setRenameValue(node.data.label);
+            setRenameState({ nodeId, x: 400, y: 300 });
+          }
+        },
+        onDuplicateClick:  (nodeId: string) => duplicate(nodeId),
+        onDisconnectClick: (nodeId: string) => disconnectNode(nodeId),
+        onViewMetrics:     (_nodeId: string) => onViewMetrics?.(),
+        onFailToggle:      (nodeId: string, label: string) => onNodeFailToggle(nodeId, label),
+        onDeleteClick:     (nodeId: string) => onNodeDelete(nodeId),
       },
     })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [nodes, nodeMetrics, isSimulating, failedNodes]
   );
 
-  // Enrich edges with traffic animation state
   const enrichedEdges = useMemo(() =>
-    edges.map((e) => ({
+    edges.map(e => ({
       ...e,
-      type: "trafficEdge",
-      data: { active: isSimulating && activeEdges.has(e.id), trafficSpeed, color: "var(--brand-cyan)" },
+      type:  "trafficEdge",
+      data:  { active: isSimulating && activeEdges.has(e.id), trafficSpeed },
       style: { stroke: "transparent" },
     })),
     [edges, isSimulating, activeEdges, trafficSpeed]
   );
 
-  const handleConnect = useCallback((connection: Connection) => {
-    const newEdge: Edge = {
-      ...connection, id: `edge-${Date.now()}`,
-      type: "trafficEdge", animated: false,
-      data: { active: false, trafficSpeed, color: "var(--brand-cyan)" },
-      style: { stroke: "transparent" },
-    } as Edge;
-    onEdgesAdd(addEdge(newEdge, edges));
-  }, [edges, onEdgesAdd, trafficSpeed]);
+  // ── handleConfigSave — THE KEY FIX ────────────────────────────────────
+  // Calls getNodeSummary() and stores summaryLines in node data so
+  // CustomNode renders the config details on the card immediately.
+  const handleConfigSave = useCallback(
+    (item: PaletteItem, values: Record<string, string | number | boolean>) => {
+      // Derive the node label from whichever name field the component uses
+      const newLabel =
+        (values["name"]         as string)?.trim() ||
+        (values["clusterName"]  as string)?.trim() ||
+        (values["snapshotName"] as string)?.trim() ||
+        (values["bucketName"]   as string)?.trim() ||
+        item.label;
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+      // ← This is the critical call that was missing / not being stored
+      const summaryLines = getNodeSummary(item.type, values);
+
+      if (pendingDrop) {
+        // First deploy: node doesn't exist yet — create with ALL data in one shot
+        onNodeAdd({
+          id:       pendingDrop.id,
+          type:     "caseNode",
+          position: pendingDrop.position,
+          width:    NODE_WIDTH,
+          data: {
+            label:        newLabel,
+            type:         item.type,
+            color:        item.color,
+            icon:         item.icon,
+            configValues: values,
+            summaryLines,  // ← config details rendered on card
+          },
+        });
+        setPendingDrop(null);
+        setConfigNodeId(null);
+        return;
+      }
+
+      // Editing an existing node via three-dot → Configure
+      if (configNodeId && configNode) {
+        onNodeUpdate(configNodeId, {
+          label:        newLabel,
+          configValues: values,
+          summaryLines,  // ← updates card details immediately
+        });
+      }
+      setConfigNodeId(null);
+    },
+    [pendingDrop, configNodeId, configNode, onNodeAdd, onNodeUpdate]
+  );
+
+  // ── Edge connect ────────────────────────────────────────────────────────
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      const newEdge: Edge = {
+        ...connection,
+        id:    `edge-${Date.now()}`,
+        type:  "trafficEdge",
+        data:  { active: false, trafficSpeed },
+        style: { stroke: "transparent" },
+      } as Edge;
+      onEdgesAdd(addEdge(newEdge, edges));
+    },
+    [edges, onEdgesAdd, trafficSpeed]
+  );
+
+  // ── Drop from sidebar ────────────────────────────────────────────────────
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const type = e.dataTransfer.getData("application/case-node-type");
+      if (!type) return;
+
+      const label = e.dataTransfer.getData("application/case-node-label") || type;
+      const color = e.dataTransfer.getData("application/case-node-color") || undefined;
+      const icon  = e.dataTransfer.getData("application/case-node-icon")  || undefined;
+
+      const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const newId    = `node-${++nodeIdC.current}`;
+
+      const paletteItem: PaletteItem =
+        PALETTE_MAP[type] ?? { type, label, icon: icon ?? "◇", color: color ?? "#6366f1", description: type };
+
+      // Store as pending — node is NOT added until user clicks "Deploy to Canvas"
+      setPendingDrop({ id: newId, position, item: paletteItem });
+      setConfigNodeId(null);
+    },
+    [screenToFlowPosition]
+  );
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const componentType = e.dataTransfer.getData("application/case-node-type");
-    if (!componentType) return;
-    const label = e.dataTransfer.getData("application/case-node-label") || componentType;
-    const color = e.dataTransfer.getData("application/case-node-color") || undefined;
-    const icon  = e.dataTransfer.getData("application/case-node-icon")  || undefined;
-    const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    const id = `node-${++nodeIdCounter.current}`;
-    onNodeAdd({ id, type: "caseNode", position, data: { label, type: componentType, color, icon } });
-  }, [screenToFlowPosition, onNodeAdd]);
+    e.dataTransfer.dropEffect = "copy";
+  };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; };
-
-  const handleNodeContextMenu: NodeMouseHandler = useCallback((e, node) => {
-    e.preventDefault(); e.stopPropagation();
-    setContextMenu({ nodeId: node.id, nodeLabel: node.data.label, x: e.clientX, y: e.clientY, isFailed: failedNodes.has(node.id) });
-  }, [failedNodes]);
-
+  // ── Double-click → rename ───────────────────────────────────────────────
   const handleNodeDoubleClick: NodeMouseHandler = useCallback((e, node) => {
-    e.preventDefault(); setContextMenu(null);
+    e.preventDefault();
     setRenameValue(node.data.label);
     setRenameState({ nodeId: node.id, x: e.clientX, y: e.clientY });
   }, []);
@@ -158,100 +274,193 @@ export default function ArchitectureCanvas({
     setRenameState(null);
   };
 
+  // ── Right-click → suppress (three-dot is the action entry) ─────────────
+  const handleNodeContextMenu: NodeMouseHandler = useCallback((e, _node) => {
+    e.preventDefault();
+  }, []);
+
+  // ── Duplicate ───────────────────────────────────────────────────────────
+  const duplicate = useCallback(
+    (nodeId: string) => {
+      const src = nodes.find(n => n.id === nodeId);
+      if (!src) return;
+      onNodeAdd({
+        id:       nextId(),
+        type:     "caseNode",
+        position: { x: src.position.x + 50, y: src.position.y + 50 },
+        width:    NODE_WIDTH,
+        data: {
+          label:        src.data.label + " (copy)",
+          type:         src.data.type,
+          color:        src.data.color,
+          icon:         src.data.icon,
+          configValues: src.data.configValues,
+          summaryLines: src.data.summaryLines,  // ← carry config to duplicate
+        },
+      });
+    },
+    [nodes, onNodeAdd]
+  );
+
+  // ── Disconnect ──────────────────────────────────────────────────────────
+  const disconnectNode = useCallback(
+    (nodeId: string) => {
+      onEdgesChange(
+        edges
+          .filter(e => e.source === nodeId || e.target === nodeId)
+          .map(e => ({ id: e.id, type: "remove" as const }))
+      );
+    },
+    [edges, onEdgesChange]
+  );
+
   const isEmpty = nodes.length === 0;
-  const intensityColor = trafficMultiplier <= 2 ? "var(--brand-green)" : trafficMultiplier <= 5 ? "#4f8ef7" : trafficMultiplier <= 8 ? "#f7a44f" : "#f87171";
-  const intensity = trafficMultiplier <= 2 ? "Low" : trafficMultiplier <= 5 ? "Moderate" : trafficMultiplier <= 8 ? "High" : "Extreme";
 
   return (
-    <div ref={reactFlowWrapper} style={{ position: "relative", width: "100%", height: "100%" }}
-      onDrop={handleDrop} onDragOver={handleDragOver}>
-
+    <div
+      ref={reactFlowWrapper}
+      style={{ position: "relative", width: "100%", height: "100%", background: "#f1f5f9" }}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+    >
       <ReactFlow
-        nodes={enrichedNodes} edges={enrichedEdges}
-        onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+        nodes={enrichedNodes}
+        edges={enrichedEdges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
         onNodeContextMenu={handleNodeContextMenu}
         onNodeDoubleClick={handleNodeDoubleClick}
-        onPaneClick={() => setContextMenu(null)}
-        nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
-        fitView deleteKeyCode={["Backspace", "Delete"]} multiSelectionKeyCode="Shift"
-        style={{ background: "var(--bg-base)" }}
+        onPaneClick={() => {}}
+        nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
+        deleteKeyCode={["Backspace", "Delete"]}
+        multiSelectionKeyCode="Shift"
+        defaultViewport={{ x: 80, y: 80, zoom: 0.7 }}
+        minZoom={0.2}
+        maxZoom={2}
+        style={{ background: "transparent" }}
         defaultEdgeOptions={{ type: "trafficEdge", style: { stroke: "transparent" } }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(30,42,69,0.8)" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(0,0,0,0.12)" />
         <Controls position="bottom-right" />
-        <MiniMap position="bottom-left"
-          nodeColor={(n) => (n.data as CaseNodeData)?.color ?? PALETTE_MAP[(n.data as CaseNodeData)?.type]?.color ?? "var(--text-muted)"}
-          maskColor="rgba(240,244,248,0.75)" style={{ width: 130, height: 80 }} />
+        <MiniMap
+          position="bottom-left"
+          nodeColor={n =>
+            (n.data as CaseNodeData)?.color ??
+            PALETTE_MAP[(n.data as CaseNodeData)?.type]?.color ??
+            "#94a3b8"
+          }
+          maskColor="rgba(241,245,249,0.75)"
+          style={{ width: 130, height: 80 }}
+        />
       </ReactFlow>
 
-      {/* ── Empty state ── *//* ── Empty state ── */}
+      {/* ── Empty state ── */}
       {isEmpty && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 5 }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 32, borderRadius: 3, background: "rgba(255,255,255,0.9)", border: "1px dashed var(--bg-border)", backdropFilter: "blur(4px)" }}>
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity={0.3}>
-              <polygon points="24,4 44,16 44,32 24,44 4,32 4,16" stroke="var(--brand-cyan)" strokeWidth="1.5" fill="none" />
-              <circle cx="24" cy="24" r="4" fill="var(--brand-cyan)" />
+        <div style={{
+          position: "absolute", inset: 0, display: "flex",
+          alignItems: "center", justifyContent: "center",
+          pointerEvents: "none", zIndex: 5,
+        }}>
+          <div style={{
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+            padding: 32, borderRadius: 8,
+            background: "rgba(255,255,255,0.92)",
+            border: "1px dashed #cbd5e1",
+          }}>
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" opacity={0.25}>
+              <rect x="2" y="2" width="36" height="36" rx="6"
+                stroke="#0369a1" strokeWidth="1.5" fill="none" strokeDasharray="4 3" />
+              <path d="M20 12v16M12 20h16" stroke="#0369a1" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
             <div style={{ textAlign: "center" }}>
-              <p style={{ color: "var(--text-secondary)", fontSize: 13, fontWeight: 600, fontFamily: "var(--font-head)", marginBottom: 4 }}>Canvas is empty</p>
-              <p style={{ color: "var(--text-muted)", fontSize: 11 }}>Drag components from the left panel<br />or load a template to get started</p>
+              <p style={{
+                fontFamily: "var(--font-head)", fontWeight: 600, fontSize: 13,
+                color: "#475569", marginBottom: 4,
+              }}>Canvas is empty</p>
+              <p style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#94a3b8" }}>
+                Click or drag a component from the left panel
+              </p>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Context menu ── */}
-      {contextMenu && (
-        <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: contextMenu.y, left: contextMenu.x, zIndex: 1000, background: "var(--bg-elevated)", border: "1px solid var(--bg-border)", borderRadius: 4, padding: 4, minWidth: 170, boxShadow: "0 4px 24px rgba(0,0,0,0.1), 0 0 0 1px var(--bg-border)" }}>
-          <CMenuItem icon="✎" label="Rename" color="var(--brand-cyan)" onClick={() => {
-            const node = nodes.find((n) => n.id === contextMenu.nodeId);
-            if (node) { setRenameValue(node.data.label); setRenameState({ nodeId: node.id, x: contextMenu.x, y: contextMenu.y }); }
-            setContextMenu(null);
-          }} />
-          <CMenuItem
-            icon={contextMenu.isFailed ? "↺" : "⚠"}
-            label={contextMenu.isFailed ? "Restore node" : "Simulate failure"}
-            color={contextMenu.isFailed ? "var(--brand-green)" : "#f7a44f"}
-            onClick={() => { onNodeFailToggle(contextMenu.nodeId, contextMenu.nodeLabel); setContextMenu(null); }}
-          />
-          <div style={{ height: 1, background: "var(--bg-border)", margin: "3px 6px" }} />
-          <CMenuItem icon="✕" label="Delete node" color="#f87171" onClick={() => { onNodeDelete(contextMenu.nodeId); setContextMenu(null); }} />
         </div>
       )}
 
       {/* ── Rename modal ── */}
       {renameState && (
         <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 999 }} onClick={commitRename} />
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", top: Math.min(renameState.y - 10, window.innerHeight - 150), left: Math.min(renameState.x - 10, window.innerWidth - 260), zIndex: 1000, background: "var(--bg-elevated)", border: "1px solid var(--brand-cyan)", borderRadius: 5, padding: 16, width: 240, boxShadow: "0 8px 32px rgba(0,229,255,0.15)" }}>
-            <p style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Rename node</p>
-            <input ref={renameInputRef} type="text" value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setRenameState(null); }}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg-surface)", border: "1px solid var(--bg-border)", color: "var(--text-primary)", outline: "none", fontFamily: "var(--font-ui)", marginBottom: 10 }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--brand-cyan)"; }}
-              onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--bg-border)"; }}
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 999 }}
+            onClick={commitRename}
+          />
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top:  Math.min(renameState.y - 10, window.innerHeight - 150),
+              left: Math.min(renameState.x - 10, window.innerWidth  - 260),
+              zIndex: 1000,
+              background: "#ffffff",
+              border: "1px solid var(--brand-cyan, #0369a1)",
+              borderRadius: 8, padding: 16, width: 240,
+              boxShadow: "0 8px 32px rgba(3,105,161,0.12), 0 2px 8px rgba(0,0,0,0.06)",
+            }}
+          >
+            <p style={{
+              fontFamily: "var(--font-mono)", fontSize: 9, color: "#64748b",
+              textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8,
+            }}>Rename node</p>
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter")  commitRename();
+                if (e.key === "Escape") setRenameState(null);
+              }}
+              style={{
+                width: "100%", padding: "7px 10px", borderRadius: 6, fontSize: 12,
+                background: "#f9fafb", border: "1px solid #e2e8f0",
+                color: "#111827", outline: "none",
+                fontFamily: "var(--font-ui)", marginBottom: 10, boxSizing: "border-box",
+              }}
+              onFocus={e  => { e.currentTarget.style.borderColor = "#0369a1"; }}
+              onBlur={e   => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
             />
             <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={commitRename} style={{ flex: 1, padding: "6px 0", borderRadius: 4, fontSize: 11, fontWeight: 600, background: "linear-gradient(135deg,#00e5ff,#4f8ef7)", border: "none", color: "#ffffff", cursor: "pointer", fontFamily: "var(--font-head)" }}>Rename</button>
-              <button onClick={() => setRenameState(null)} style={{ padding: "6px 12px", borderRadius: 4, fontSize: 11, background: "var(--bg-border)", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}>Cancel</button>
+              <button
+                onClick={commitRename}
+                style={{
+                  flex: 1, padding: "6px 0", borderRadius: 5, fontSize: 11, fontWeight: 600,
+                  background: "#0369a1", border: "none", color: "#ffffff",
+                  cursor: "pointer", fontFamily: "var(--font-head)", letterSpacing: "0.04em",
+                }}
+              >Rename</button>
+              <button
+                onClick={() => setRenameState(null)}
+                style={{
+                  padding: "6px 12px", borderRadius: 5, fontSize: 11,
+                  background: "#f1f5f9", border: "1px solid #e2e8f0",
+                  color: "#475569", cursor: "pointer",
+                }}
+              >Cancel</button>
             </div>
           </div>
         </>
       )}
 
-      <style>{`@keyframes dot{0%,100%{opacity:0.3;transform:scale(0.8)}50%{opacity:1;transform:scale(1.2)}}`}</style>
+      {/* ── Config modal — conditionally rendered so it unmounts cleanly ── */}
+      {configPalette && (
+        <ComponentConfigModal
+          item={configPalette}
+          mode={pendingDrop ? "add" : "edit"}
+          initialValues={pendingDrop ? undefined : configInitialValues}
+          onClose={() => { setConfigNodeId(null); setPendingDrop(null); }}
+          onAdd={handleConfigSave}
+        />
+      )}
     </div>
-  );
-}
-
-function CMenuItem({ icon, label, color, onClick }: { icon: string; label: string; color: string; onClick: () => void; }) {
-  const [h, setH] = useState(false);
-  return (
-    <button onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 10px", borderRadius: 4, border: "none", cursor: "pointer", background: h ? color + "18" : "transparent", color: h ? color : "var(--text-secondary)", fontSize: 12, fontFamily: "var(--font-ui)", textAlign: "left", transition: "all 0.15s" }}>
-      <span style={{ color, fontSize: 11, width: 14 }}>{icon}</span>{label}
-    </button>
   );
 }

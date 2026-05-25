@@ -15,12 +15,10 @@
     "recharts": "^2.12.7"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",
-    "babel-loader": "^10.1.1",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.6.0"

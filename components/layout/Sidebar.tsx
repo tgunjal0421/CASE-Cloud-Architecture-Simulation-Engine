@@ -6,7 +6,9 @@
 import React, { useState, useMemo } from "react";
 import { COMPONENT_CATEGORIES, ARCHITECTURE_TEMPLATES, PaletteItem, PaletteCategory } from "@/lib/mockData";
 import ComponentConfigModal from "@/components/builder/ComponentConfigModal";
+import { getNodeSummary } from "@/lib/componentConfigs";
 import { Node } from "reactflow";
+import { NODE_WIDTH } from "@/components/builder/CustomNode";
 import { CaseNodeData } from "@/components/builder/CustomNode";
 
 interface SidebarProps {
@@ -70,7 +72,7 @@ export default function Sidebar({ onLoadTemplate, onNodeAdd }: SidebarProps) {
       id:       nextId(),
       type:     "caseNode",
       position: { x: 200 + Math.random() * 300, y: 100 + Math.random() * 200 },
-      data:     { label, type: item.type, color: item.color, icon: item.icon },
+      data:     { label, type: item.type, color: item.color, icon: item.icon, configValues: values },
     };
     onNodeAdd(node);
   };

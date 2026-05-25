@@ -13,16 +13,16 @@ import { ToastContainer, useToast } from "@/components/layout/Toast";
 
 import { saveArchitecture, fetchCostEstimate, CostEstimateResponse } from "@/lib/api";
 import { SCENARIO_PRESETS, ARCHITECTURE_TEMPLATES } from "@/lib/mockData";
-import { CaseNodeData } from "@/components/builder/CustomNode";
+import { CaseNodeData, NODE_WIDTH } from "@/components/builder/CustomNode";
 import { useSimulation } from "@/lib/useSimulation";
 
 function buildTemplateNodes(id: string): { nodes: Node<CaseNodeData>[]; edges: Edge[] } {
   if (id === "three-tier") return {
     nodes: [
-      { id: "lb-1", type: "caseNode", position: { x: 250, y: 60  }, data: { label: "Load Balancer", type: "loadbalancer" } },
-      { id: "vm-1", type: "caseNode", position: { x: 100, y: 200 }, data: { label: "App Server 1",  type: "vm"           } },
-      { id: "vm-2", type: "caseNode", position: { x: 300, y: 200 }, data: { label: "App Server 2",  type: "vm"           } },
-      { id: "db-1", type: "caseNode", position: { x: 200, y: 360 }, data: { label: "Primary DB",    type: "database"     } },
+      { id: "lb-1", type: "caseNode", position: { x: 250, y: 60  }, width: NODE_WIDTH, data: { label: "Load Balancer", type: "loadbalancer" } },
+      { id: "vm-1", type: "caseNode", position: { x: 100, y: 200 }, width: NODE_WIDTH, data: { label: "App Server 1",  type: "vm"           } },
+      { id: "vm-2", type: "caseNode", position: { x: 300, y: 200 }, width: NODE_WIDTH, data: { label: "App Server 2",  type: "vm"           } },
+      { id: "db-1", type: "caseNode", position: { x: 200, y: 360 }, width: NODE_WIDTH, data: { label: "Primary DB",    type: "database"     } },
     ],
     edges: [
       { id: "e1", source: "lb-1", target: "vm-1" },
@@ -40,7 +40,7 @@ function buildTemplateNodes(id: string): { nodes: Node<CaseNodeData>[]; edges: E
       { id: "q-1",     type: "caseNode", position: { x: 400, y: 300 }, data: { label: "Message Queue",  type: "queue"      } },
       { id: "db-1",    type: "caseNode", position: { x: 80,  y: 300 }, data: { label: "User DB",        type: "database"   } },
       { id: "db-2",    type: "caseNode", position: { x: 240, y: 300 }, data: { label: "Orders DB",      type: "database"   } },
-      { id: "cache-1", type: "caseNode", position: { x: 560, y: 160 }, data: { label: "Redis Cache",    type: "cache"      } },
+      { id: "cache-1", type: "caseNode", position: { x: 560, y: 160 }, width: NODE_WIDTH, data: { label: "Redis Cache",    type: "cache"      } },
     ],
     edges: [
       { id: "e1", source: "gw-1",  target: "svc-1"   },
@@ -54,9 +54,9 @@ function buildTemplateNodes(id: string): { nodes: Node<CaseNodeData>[]; edges: E
   };
   if (id === "cdn-static") return {
     nodes: [
-      { id: "st-1", type: "caseNode", position: { x: 200, y: 60  }, data: { label: "Object Storage", type: "storage"      } },
-      { id: "lb-1", type: "caseNode", position: { x: 80,  y: 200 }, data: { label: "CDN Edge A",     type: "loadbalancer" } },
-      { id: "lb-2", type: "caseNode", position: { x: 320, y: 200 }, data: { label: "CDN Edge B",     type: "loadbalancer" } },
+      { id: "st-1", type: "caseNode", position: { x: 200, y: 60  }, width: NODE_WIDTH, data: { label: "Object Storage", type: "storage"      } },
+      { id: "lb-1", type: "caseNode", position: { x: 80,  y: 200 }, width: NODE_WIDTH, data: { label: "CDN Edge A",     type: "loadbalancer" } },
+      { id: "lb-2", type: "caseNode", position: { x: 320, y: 200 }, width: NODE_WIDTH, data: { label: "CDN Edge B",     type: "loadbalancer" } },
     ],
     edges: [
       { id: "e1", source: "st-1", target: "lb-1" },
@@ -96,6 +96,18 @@ export default function CasePage() {
 
   const handleNodeRename = useCallback((nodeId: string, label: string) => {
     setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, label } } : n));
+  }, [setNodes]);
+
+  // Save config values onto the node so specs show on the card
+  const handleNodeConfigSave = useCallback((nodeId: string, values: Record<string, string | number | boolean>) => {
+    setNodes((prev) => prev.map((n) =>
+      n.id === nodeId ? { ...n, data: { ...n.data, configValues: values } } : n
+    ));
+  }, [setNodes]);
+
+  // Update node data (label + configValues + summaryLines) after config modal save
+  const handleNodeUpdate = useCallback((nodeId: string, data: Partial<import("@/components/builder/CustomNode").CaseNodeData>) => {
+    setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n));
   }, [setNodes]);
 
   const handleNodeDelete = useCallback((nodeId: string) => {
@@ -193,6 +205,7 @@ export default function CasePage() {
                 onNodeRename={handleNodeRename}
                 onNodeDelete={handleNodeDelete}
                 onNodeFailToggle={toggleFail}
+              onNodeUpdate={handleNodeUpdate}
                 trafficMultiplier={trafficMultiplier}
                 isSimulating={simStatus === "running"}
                 nodeMetrics={simState.nodeMetrics}
