@@ -189,8 +189,10 @@ export async function toggleRunFailure(runId: string, nodeId: string): Promise<{
 }
 
 export async function saveArchitecture(payload: ArchitectureSavePayload): Promise<{ id: string; savedAt: string }> {
-  console.info("[API] saveArchitecture called:", payload.name);
-  return { id: `arch_${Date.now()}`, savedAt: new Date().toISOString() };
+  return apiFetch<{ id: string; savedAt: string }>("/architecture/save", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchMetrics(): Promise<MetricsResponse> {

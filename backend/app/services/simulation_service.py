@@ -2,12 +2,26 @@ import threading
 import time
 import uuid
 from copy import deepcopy
+from typing import Any
 
 from app.simulation.engine import empty_state, run_engine, run_tick
 
 RUNS: dict[str, dict] = {}
 RUNS_LOCK = threading.Lock()
 TICK_SECONDS = 0.8
+
+
+def _normalize_config(data: Any) -> dict:
+    payload = data if isinstance(data, dict) else data.model_dump()
+    nodes = payload.get("nodes", [])
+    edges = payload.get("edges", [])
+    return {
+        "nodes": [n if isinstance(n, dict) else n.model_dump() for n in nodes],
+        "edges": [e if isinstance(e, dict) else e.model_dump() for e in edges],
+        "traffic": int(payload.get("traffic", 1)),
+        "chaos": bool(payload.get("chaos", False)),
+        "failed_nodes": list(payload.get("failed_nodes", [])),
+    }
 
 
 def _run_loop(run_id: str, stop_event: threading.Event) -> None:
@@ -22,7 +36,7 @@ def _run_loop(run_id: str, stop_event: threading.Event) -> None:
 
 
 def start_simulation(data) -> dict:
-    config = data if isinstance(data, dict) else data.model_dump()
+    config = _normalize_config(data)
     run_id = f"run_{uuid.uuid4().hex[:12]}"
     stop_event = threading.Event()
     state = run_tick(config, empty_state())

@@ -9,6 +9,7 @@ class Node(BaseModel):
 
 
 class Edge(BaseModel):
+    id: Optional[str] = None
     source: str
     target: str
 
@@ -16,7 +17,7 @@ class Edge(BaseModel):
 class SimulationInput(BaseModel):
     nodes: List[Node]
     edges: List[Edge]
-    traffic: int
+    traffic: int = Field(ge=1, le=10)
     chaos: bool = False
     failed_nodes: List[str] = Field(default_factory=list)
 
