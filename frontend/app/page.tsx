@@ -107,17 +107,16 @@ export default function CasePage() {
     setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
   }, [setNodes, setEdges]);
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback(async () => {
     if (nodes.length === 0) { addToast("info", "Add nodes first"); return; }
-    const runId = `run_${Date.now()}`;
-    setLastRunId(runId);
-    startSim();
+    const runId = await startSim();
+    if (runId) setLastRunId(runId);
     setResultsOpen(true); // auto-open results panel on simulation start
     addToast("success", "Simulation started", `${nodes.length} nodes · ×${trafficMultiplier}`);
   }, [nodes, trafficMultiplier, startSim, addToast]);
 
-  const handleStop = useCallback(() => {
-    stopSim();
+  const handleStop = useCallback(async () => {
+    await stopSim();
     addToast("info", "Simulation stopped", "Metrics frozen · logs preserved");
   }, [stopSim, addToast]);
 

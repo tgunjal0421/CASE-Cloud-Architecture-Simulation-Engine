@@ -1,129 +1,176 @@
 // lib/useSimulation.ts
-// Single source of truth for simulation state.
-// SimStatus drives ALL behaviors — traffic, logs, metrics all gated by it.
-// Interval is guaranteed to be cleared on stop/unmount — no leaks.
+// Simulation state hook backed by backend run lifecycle + polling.
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Node, Edge } from "reactflow";
 import { CaseNodeData } from "@/components/builder/CustomNode";
-import { runTick, emptySimState, SimulationState, LogEntry } from "./simulationEngine";
+import {
+  SimulationState,
+  LogEntry,
+  startSimulation,
+  fetchRunSnapshot,
+  stopSimulation,
+  toggleRunFailure,
+} from "./api";
 
-const TICK_MS = 800;
+const POLL_MS = 800;
 
-// ── Centralized simulation status ─────────────────────────────────────────
 export type SimStatus = "idle" | "running" | "stopped";
 
 export interface UseSimulationReturn {
   simStatus:   SimStatus;
   simState:    SimulationState;
   failedNodes: Set<string>;
-  startSim:    () => void;
-  stopSim:     () => void;
+  startSim:    () => Promise<string | null>;
+  stopSim:     () => Promise<void>;
   toggleFail:  (nodeId: string, label: string) => void;
   resetSim:    () => void;
   clearLogs:   () => void;
 }
 
+function emptySimState(): SimulationState {
+  return {
+    nodeMetrics: {},
+    systemMetrics: {
+      totalThroughput: 0,
+      avgLatency: 0,
+      errorRate: 0,
+      activeRequests: 0,
+      droppedRequests: 0,
+    },
+    logs: [],
+    activeEdges: new Set<string>(),
+  };
+}
+
 export function useSimulation(
   nodes: Node<CaseNodeData>[],
-  edges: Edge[],
-  trafficMultiplier: number,   // live — ref-tracked so slider works during run
+  edges: Edge[], 
+  trafficMultiplier: number,
   failureMode: boolean,
 ): UseSimulationReturn {
   const [simStatus,   setSimStatus]   = useState<SimStatus>("idle");
   const [simState,    setSimState]    = useState<SimulationState>(emptySimState());
   const [failedNodes, setFailedNodes] = useState<Set<string>>(new Set());
+  const runIdRef = useRef<string | null>(null);
 
-  // Refs — interval closure reads these without needing re-registration
   const nodesRef      = useRef(nodes);
   const edgesRef      = useRef(edges);
   const multiplierRef = useRef(trafficMultiplier);
   const failModeRef   = useRef(failureMode);
   const failedRef     = useRef(failedNodes);
 
-  // Keep refs fresh on every render
   useEffect(() => { nodesRef.current      = nodes;             }, [nodes]);
   useEffect(() => { edgesRef.current      = edges;             }, [edges]);
   useEffect(() => { multiplierRef.current = trafficMultiplier; }, [trafficMultiplier]);
   useEffect(() => { failModeRef.current   = failureMode;       }, [failureMode]);
   useEffect(() => { failedRef.current     = failedNodes;       }, [failedNodes]);
 
-  // Single interval ref — never allow duplicates
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Guaranteed interval teardown ──
-  const clearTick = useCallback(() => {
-    if (intervalRef.current !== null) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+  const clearPoll = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
   }, []);
 
-  // ── Tick — only runs while interval is active ──
-  const tick = useCallback(() => {
-    setSimState((prev) =>
-      runTick(
-        prev,
-        nodesRef.current,
-        edgesRef.current,
-        multiplierRef.current,
-        failModeRef.current,
-        failedRef.current,
-      )
-    );
-  }, []);
+  const pollRun = useCallback(async () => {
+    const runId = runIdRef.current;
+    if (!runId) return;
+    try {
+      const snapshot = await fetchRunSnapshot(runId);
+      setSimState(snapshot.state);
+      setFailedNodes(new Set(snapshot.config.failedNodes));
+      if (snapshot.status !== "running") {
+        clearPoll();
+        setSimStatus("stopped");
+      }
+    } catch (err) {
+      console.error("Polling simulation run failed", err);
+      clearPoll();
+      setSimStatus("stopped");
+    }
+  }, [clearPoll]);
 
-  // ── Start — guard against double-start ──
-  const startSim = useCallback(() => {
-    if (intervalRef.current !== null) return; // already running
-    setSimStatus("running");
-    tick(); // immediate first tick so UI doesn't wait 800ms
-    intervalRef.current = setInterval(tick, TICK_MS);
-  }, [tick]);
+  const startSim = useCallback(async () => {
+    if (pollRef.current !== null) return runIdRef.current;
+    try {
+      const result = await startSimulation({
+        nodes: nodesRef.current,
+        edges: edgesRef.current,
+        trafficMultiplier: multiplierRef.current,
+        failureMode: failModeRef.current,
+        failedNodes: Array.from(failedRef.current),
+      });
+      runIdRef.current = result.runId;
+      setSimStatus("running");
+      await pollRun();
+      pollRef.current = setInterval(pollRun, POLL_MS);
+      return result.runId;
+    } catch (err) {
+      console.error("Failed to start simulation", err);
+      setSimStatus("idle");
+      return null;
+    }
+  }, [pollRun]);
 
-  // ── Stop — clears interval immediately, freezes state ──
-  const stopSim = useCallback(() => {
-    clearTick();
+  const stopSim = useCallback(async () => {
+    clearPoll();
+    const runId = runIdRef.current;
+    if (runId) {
+      try {
+        await stopSimulation(runId);
+        const snapshot = await fetchRunSnapshot(runId);
+        setSimState(snapshot.state);
+        setFailedNodes(new Set(snapshot.config.failedNodes));
+      } catch (err) {
+        console.error("Failed to stop simulation", err);
+      }
+    }
     setSimStatus("stopped");
-    // simState is NOT reset — metrics/logs remain visible after stop
-  }, [clearTick]);
+  }, [clearPoll]);
 
-  // ── Toggle node failure — works in any state ──
   const toggleFail = useCallback((nodeId: string, label: string) => {
     setFailedNodes((prev) => {
-      const next      = new Set(prev);
+      const next = new Set(prev);
       const wasFailed = next.has(nodeId);
-      wasFailed ? next.delete(nodeId) : next.add(nodeId);
+      if (wasFailed) next.delete(nodeId);
+      else next.add(nodeId);
 
       const entry: LogEntry = {
-        id:        `log-${Date.now()}`,
+        id: `log-${Date.now()}`,
         timestamp: new Date().toLocaleTimeString("en-GB"),
-        level:     wasFailed ? "success" : "error",
+        level: wasFailed ? "success" : "error",
         requestId: null,
-        message:   wasFailed
-          ? `${label} RECOVERED — back online`
-          : `${label} FAILED — manually triggered`,
+        message: wasFailed
+          ? `${label} RECOVERED - back online`
+          : `${label} FAILED - manually triggered`,
       };
-      // Always add failure log regardless of sim state
       setSimState((s) => ({ ...s, logs: [entry, ...s.logs].slice(0, 200) }));
+      const runId = runIdRef.current;
+      if (runId && simStatus === "running") {
+        toggleRunFailure(runId, nodeId).catch((err) => {
+          console.error("Failed to sync failure toggle", err);
+        });
+      }
       return next;
     });
-  }, []);
+  }, [simStatus]);
 
-  // ── Full reset — clears everything including canvas metrics ──
   const resetSim = useCallback(() => {
-    clearTick();
+    clearPoll();
+    runIdRef.current = null;
     setSimStatus("idle");
     setSimState(emptySimState());
     setFailedNodes(new Set());
-  }, [clearTick]);
+  }, [clearPoll]);
 
   const clearLogs = useCallback(() => {
     setSimState((s) => ({ ...s, logs: [] }));
   }, []);
 
-  // Cleanup on unmount — prevents memory leaks in dev hot-reload
-  useEffect(() => () => clearTick(), [clearTick]);
+  useEffect(() => () => clearPoll(), [clearPoll]);
 
   return { simStatus, simState, failedNodes, startSim, stopSim, toggleFail, resetSim, clearLogs };
 }
