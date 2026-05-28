@@ -4,7 +4,7 @@
 import React, { memo } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
 import { COMPONENT_PALETTE } from "@/lib/mockData";
-import { NodeMetrics } from "@/lib/simulationEngine";
+import { NodeMetrics } from "@/lib/api";
 
 const PALETTE_MAP = Object.fromEntries(COMPONENT_PALETTE.map((c) => [c.type, c]));
 

@@ -9,8 +9,7 @@ import {
   LineChart, Line, AreaChart, Area,
   XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { CostEstimateResponse } from "@/lib/api";
-import { SystemMetrics, LogEntry } from "@/lib/simulationEngine";
+import { CostEstimateResponse, SystemMetrics, LogEntry } from "@/lib/api";
 import { SimStatus } from "@/lib/useSimulation";
 import { SCENARIO_PRESETS } from "@/lib/mockData";
 

@@ -13,7 +13,7 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import CustomNode, { CaseNodeData } from "./CustomNode";
 import { COMPONENT_PALETTE } from "@/lib/mockData";
-import { NodeMetrics } from "@/lib/simulationEngine";
+import { NodeMetrics } from "@/lib/api";
 
 // ── Animated traffic edge ──────────────────────────────────────────────────
 function TrafficEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps) {

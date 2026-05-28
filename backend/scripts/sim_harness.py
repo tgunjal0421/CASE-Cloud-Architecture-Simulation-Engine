@@ -12,7 +12,7 @@ import os
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
 sys.path.insert(0, BACKEND_ROOT)
-from app.simulation.engine import run_engine
+from app.simulation.engine import run_tick, empty_state
 
 
 def main():
@@ -23,19 +23,18 @@ def main():
     args = p.parse_args()
 
     nodes = [
-        {'id':'lb-1','type':'LoadBalancer'},
-        {'id':'app-1','type':'vm','capacity':100},
-        {'id':'db-1','type':'database','capacity':80},
+        {'id':'lb-1','type':'loadbalancer', 'label': 'Load Balancer'},
+        {'id':'app-1','type':'vm', 'label': 'App Server'},
+        {'id':'db-1','type':'database', 'label': 'Primary DB'},
     ]
     edges = [{'source':'lb-1','target':'app-1'},{'source':'app-1','target':'db-1'}]
 
-    state = {'latency_history': [], 'throughput_history': [], 'error_history': []}
+    state = empty_state()
     for t in range(1, args.ticks + 1):
-        payload = {'nodes': nodes, 'edges': edges, 'traffic': args.traffic, 'chaos': False, 'pipeline': args.pipeline, 'state': state}
-        res = run_engine(payload, tick=t)
-        metrics = res['metrics']
-        state = {'latency_history': metrics.get('latency_history', []), 'throughput_history': metrics.get('throughput_history', []), 'error_history': metrics.get('error_history', [])}
-        print(f"Tick {t}: throughput={metrics['throughput']} latency={metrics['latency']} err={metrics['error_rate']} recent_requests={len(res.get('recent_requests', []))}")
+        payload = {'nodes': nodes, 'edges': edges, 'traffic': args.traffic, 'chaos': False}
+        state = run_tick(payload, state)
+        metrics = state['system_metrics']
+        print(f"Tick {t}: throughput={metrics['totalThroughput']} latency={metrics['avgLatency']} err={metrics['errorRate']} logs={len(state.get('logs', []))}")
         time.sleep(0.1)
 
     print('\nFinal metrics:')
