@@ -126,4 +126,4 @@ async def delete_architecture(db: AsyncSession, arch_id: str) -> bool:
         return False
     await db.delete(arch)
     return True
->>>>>>> 54a450e (Backend Updated)
+

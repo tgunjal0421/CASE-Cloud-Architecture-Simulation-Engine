@@ -144,4 +144,3 @@ async def delete_architecture(
     if not deleted:
         raise HTTPException(status_code=404, detail="Architecture not found")
     return {"ok": True}
->>>>>>> 54a450e (Backend Updated)
