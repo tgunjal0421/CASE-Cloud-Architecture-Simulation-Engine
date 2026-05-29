@@ -1,23 +1,3 @@
-<<<<<<< HEAD
-from datetime import datetime, timezone
-import uuid
-
-ARCHITECTURES: dict[str, dict] = {}
-
-
-def save_architecture(name: str, nodes: list, edges: list) -> dict:
-    arch_id = f"arch_{uuid.uuid4().hex[:12]}"
-    saved_at = datetime.now(timezone.utc).isoformat()
-    ARCHITECTURES[arch_id] = {
-        "id": arch_id,
-        "name": name,
-        "nodes": nodes,
-        "edges": edges,
-        "savedAt": saved_at,
-    }
-    return {"id": arch_id, "savedAt": saved_at}
-
-=======
 # app/services/architecture_service.py
 # All database operations for architectures, nodes, and edges.
 # Route handlers call these functions — they never touch SQLAlchemy directly.
@@ -28,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from app.db.models import Architecture, Node, Edge
 from app.schemas.architecture import ArchitectureSave
-
 
 async def save_architecture(db: AsyncSession, payload: ArchitectureSave) -> Architecture:
     """
