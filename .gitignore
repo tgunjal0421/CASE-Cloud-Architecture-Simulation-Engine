@@ -9,6 +9,7 @@ venv/
 __pycache__/
 *.py[cod]
 *$py.class
+<<<<<<< HEAD
 *.pyc
 
 # Logs
@@ -22,3 +23,7 @@ __pycache__/
 
 # TypeScript
 *.tsbuildinfo
+=======
+.next/
+node_modules/
+>>>>>>> 54a450e (Backend Updated)
